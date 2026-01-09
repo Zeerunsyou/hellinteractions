@@ -4,17 +4,19 @@ import 'dotenv/config';
 
 const app = express();
 
-// Use raw body parser
-app.use(express.raw({ type: 'application/json' }));
+// Vercel requires the raw body for signature verification
+app.use(
+  '/interactions',
+  express.raw({ type: 'application/json' })
+);
 
 // Middleware to verify Discord request
 function verifyDiscordRequest(publicKey) {
   return (req, res, next) => {
-    const signature = req.header('X-Signature-Ed25519');
-    const timestamp = req.header('X-Signature-Timestamp');
-    const rawBody = req.body;
+    const signature = req.headers['x-signature-ed25519'];
+    const timestamp = req.headers['x-signature-timestamp'];
 
-    if (!verifyKey(rawBody, signature, timestamp, publicKey)) {
+    if (!verifyKey(req.body, signature, timestamp, publicKey)) {
       return res.status(401).send('Invalid request signature');
     }
     next();
@@ -25,13 +27,20 @@ function verifyDiscordRequest(publicKey) {
 app.post('/interactions', verifyDiscordRequest(process.env.PUBLIC_KEY), (req, res) => {
   const body = JSON.parse(req.body.toString('utf-8'));
 
-  // Respond to PING
+  // Respond to Discord PING
   if (body.type === InteractionType.PING) {
     return res.json({ type: InteractionResponseType.PONG });
   }
 
-  res.json({ type: 4, data: { content: 'Slash commands are not yet loaded!' } });
+  // Slash commands placeholder
+  if (body.type === InteractionType.APPLICATION_COMMAND) {
+    return res.json({
+      type: 4,
+      data: { content: 'Slash commands will work once loaded.' },
+    });
+  }
+
+  res.status(400).send('Unknown interaction type');
 });
 
-// Export app (Vercel serverless)
 export default app;
