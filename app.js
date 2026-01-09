@@ -4,15 +4,15 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { InteractionType, InteractionResponseType, verifyKey } from 'discord-interactions';
+import { verifyKey, InteractionType, InteractionResponseType } from 'discord-interactions';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(express.json({
-  verify: (req, res, buf) => { req.rawBody = buf.toString(); }
-}));
+
+// Use raw body parser (required for Discord signature verification)
+app.use(express.raw({ type: 'application/json' }));
 
 console.log("PUBLIC_KEY:", process.env.PUBLIC_KEY);
 
@@ -23,12 +23,11 @@ function VerifyDiscordRequestMiddleware(publicKey) {
   return (req, res, next) => {
     const signature = req.header('X-Signature-Ed25519');
     const timestamp = req.header('X-Signature-Timestamp');
-    const rawBody = req.rawBody;
+    const rawBody = req.body;
 
     if (!verifyKey(rawBody, signature, timestamp, publicKey)) {
-      return res.status(401).send('Bad request signature');
+      return res.status(401).send('Invalid request signature');
     }
-
     next();
   };
 }
@@ -46,45 +45,66 @@ async function loadCommands() {
     const cmd = await import(`./commands/${file}`);
     commands.set(cmd.command.name, cmd);
   }
-  console.log("Loaded commands:", [...commands.keys()]);
+  // console.log("Loaded commands:", [...commands.keys()]);
 }
 
 // --------------------
-// Interaction handler
+// Interaction endpoint
 // --------------------
 app.post(
   '/interactions',
-  express.raw({ type: 'application/json' }), // keep raw bytes
   VerifyDiscordRequestMiddleware(process.env.PUBLIC_KEY),
   async (req, res) => {
-    const body = JSON.parse(req.body.toString('utf-8')); // parse after verification
+    // Load commands
+    await loadCommands();
+
+    const body = JSON.parse(req.body.toString('utf-8'));
     const { type, data } = body;
 
-    // Ping
+    // -------------------- PING (Discord verification) --------------------
     if (type === InteractionType.PING) {
-      return res.send({ type: InteractionResponseType.PONG });
+      return res.json({ type: InteractionResponseType.PONG });
     }
 
-    // Slash commands
+    // -------------------- Slash commands --------------------
     if (type === InteractionType.APPLICATION_COMMAND) {
       const cmd = commands.get(data.name);
-      if (!cmd) return res.send({ type: 4, data: { content: '❌ Unknown command', flags: 64 } });
+      if (!cmd) {
+        return res.json({
+          type: 4,
+          data: { content: '❌ Unknown command', flags: 64 }
+        });
+      }
+
       try {
-        return cmd.handle(body, (response) => res.send(response));
+        return cmd.handle(body, (response) => res.json(response));
       } catch (err) {
         console.error('Command error:', err);
-        return res.send({ type: 4, data: { content: '❌ Command failed', flags: 64 } });
+        return res.json({
+          type: 4,
+          data: { content: '❌ Command failed', flags: 64 }
+        });
       }
     }
 
-    // Modal submit (like /report)
+    // -------------------- Modal submit (like /report) --------------------
     if (type === InteractionType.MODAL_SUBMIT) {
-      const cmd = commands.get('report');
-      if (cmd) return cmd.handle(body, (response) => res.send(response));
+      const cmd = commands.get('report'); // only report uses modal
+      if (cmd) return cmd.handle(body, (response) => res.json(response));
     }
 
     return res.status(400).send('Unknown interaction type');
   }
 );
 
+// --------------------
+// Optional GET for testing in browser
+// --------------------
+app.get('/interactions', (req, res) => {
+  res.send('Discord interactions endpoint is live. POST requests only!');
+});
+
+// --------------------
+// Export app for Vercel
+// --------------------
 export default app;
