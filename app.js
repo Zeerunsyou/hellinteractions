@@ -1,46 +1,41 @@
-import express from 'express';
-import { verifyKey, InteractionType, InteractionResponseType } from 'discord-interactions';
-import 'dotenv/config';
+import { verifyKey, InteractionType, InteractionResponseType } from "discord-interactions";
 
-const app = express();
+export const config = {
+  api: {
+    bodyParser: false, // important! disable parsing so we can use raw body
+  },
+};
 
-// Vercel requires the raw body for signature verification
-app.use(
-  '/interactions',
-  express.raw({ type: 'application/json' })
-);
+export default async function handler(req, res) {
+  // Only POST
+  if (req.method !== "POST") return res.status(405).end("Method not allowed");
 
-// Middleware to verify Discord request
-function verifyDiscordRequest(publicKey) {
-  return (req, res, next) => {
-    const signature = req.headers['x-signature-ed25519'];
-    const timestamp = req.headers['x-signature-timestamp'];
+  const signature = req.headers["x-signature-ed25519"];
+  const timestamp = req.headers["x-signature-timestamp"];
 
-    if (!verifyKey(req.body, signature, timestamp, publicKey)) {
-      return res.status(401).send('Invalid request signature');
-    }
-    next();
-  };
-}
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const rawBody = Buffer.concat(chunks);
 
-// Interaction endpoint
-app.post('/interactions', verifyDiscordRequest(process.env.PUBLIC_KEY), (req, res) => {
-  const body = JSON.parse(req.body.toString('utf-8'));
+  // Verify signature
+  if (!verifyKey(rawBody, signature, timestamp, process.env.PUBLIC_KEY)) {
+    return res.status(401).send("Invalid request signature");
+  }
 
-  // Respond to Discord PING
+  const body = JSON.parse(rawBody.toString("utf-8"));
+
+  // PING
   if (body.type === InteractionType.PING) {
-    return res.json({ type: InteractionResponseType.PONG });
+    return res.status(200).json({ type: InteractionResponseType.PONG });
   }
 
   // Slash commands placeholder
   if (body.type === InteractionType.APPLICATION_COMMAND) {
-    return res.json({
+    return res.status(200).json({
       type: 4,
-      data: { content: 'Slash commands will work once loaded.' },
+      data: { content: "Hello! Slash commands work." },
     });
   }
 
-  res.status(400).send('Unknown interaction type');
-});
-
-export default app;
+  res.status(400).end("Unknown interaction type");
+}
