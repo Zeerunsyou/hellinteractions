@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+const fetch = globalThis.fetch;
 
 export const command = {
   name: 'view',
@@ -125,4 +125,5 @@ export async function handle(interaction, respond) {
       ],
     },
   });
+
 }
