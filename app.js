@@ -54,10 +54,10 @@ async function loadCommands() {
 // --------------------
 app.post(
   '/interactions',
+  express.raw({ type: 'application/json' }), // keep raw bytes
   VerifyDiscordRequestMiddleware(process.env.PUBLIC_KEY),
   async (req, res) => {
-    await loadCommands(); // ensures commands are loaded
-    const body = req.body;
+    const body = JSON.parse(req.body.toString('utf-8')); // parse after verification
     const { type, data } = body;
 
     // Ping
@@ -79,7 +79,7 @@ app.post(
 
     // Modal submit (like /report)
     if (type === InteractionType.MODAL_SUBMIT) {
-      const cmd = commands.get('report'); // only report uses modal
+      const cmd = commands.get('report');
       if (cmd) return cmd.handle(body, (response) => res.send(response));
     }
 
