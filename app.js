@@ -1,41 +1,44 @@
-import { verifyKey, InteractionType, InteractionResponseType } from "discord-interactions";
+import { verifyKey, InteractionType, InteractionResponseType } from 'discord-interactions';
+import express from 'express';
 
-export const config = {
-  api: {
-    bodyParser: false, // important! disable parsing so we can use raw body
-  },
-};
+const app = express();
 
-export default async function handler(req, res) {
-  // Only POST
-  if (req.method !== "POST") return res.status(405).end("Method not allowed");
+// Use raw body for signature verification
+app.use(express.raw({ type: 'application/json' }));
 
-  const signature = req.headers["x-signature-ed25519"];
-  const timestamp = req.headers["x-signature-timestamp"];
+// Discord verification middleware
+function verifyDiscordRequest(publicKey) {
+  return (req, res, next) => {
+    const signature = req.header('X-Signature-Ed25519');
+    const timestamp = req.header('X-Signature-Timestamp');
+    const rawBody = req.body;
 
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const rawBody = Buffer.concat(chunks);
-
-  // Verify signature
-  if (!verifyKey(rawBody, signature, timestamp, process.env.PUBLIC_KEY)) {
-    return res.status(401).send("Invalid request signature");
-  }
-
-  const body = JSON.parse(rawBody.toString("utf-8"));
-
-  // PING
-  if (body.type === InteractionType.PING) {
-    return res.status(200).json({ type: InteractionResponseType.PONG });
-  }
-
-  // Slash commands placeholder
-  if (body.type === InteractionType.APPLICATION_COMMAND) {
-    return res.status(200).json({
-      type: 4,
-      data: { content: "Hello! Slash commands work." },
-    });
-  }
-
-  res.status(400).end("Unknown interaction type");
+    try {
+      if (!verifyKey(rawBody, signature, timestamp, publicKey)) {
+        throw new Error('Invalid request signature');
+      }
+      next();
+    } catch {
+      return res.status(401).json({ error: 'Invalid request signature' });
+    }
+  };
 }
+
+// POST endpoint
+app.post(
+  '/interactions',
+  verifyDiscordRequest(process.env.PUBLIC_KEY),
+  (req, res) => {
+    const body = JSON.parse(req.body.toString('utf-8'));
+
+    // Respond to PING like Python example
+    if (body.type === InteractionType.PING) {
+      return res.json({ type: InteractionResponseType.PONG });
+    }
+
+    // Handle other interactions (commands/modals)
+    return res.json({ type: 4, data: { content: 'Command received!' } });
+  }
+);
+
+export default app;
