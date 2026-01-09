@@ -1,7 +1,7 @@
 // app.js
 import 'dotenv/config';
 import express from 'express';
-import fetch from 'node-fetch';
+const fetch = globalThis.fetch;
 import { InteractionType, InteractionResponseType, verifyKey } from 'discord-interactions';
 import fs from 'fs';
 import path from 'path';
