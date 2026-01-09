@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+const fetch = globalThis.fetch;
 
 export const command = {
   name: 'profile',
@@ -76,3 +76,4 @@ export async function handle(interaction, respond, DiscordRequest, getRobloxProf
     },
   });
 }
+
